@@ -1,0 +1,187 @@
+name: Build, Deploy & Monitor with CloudWatch
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1                      
+  TF_DIR: ./terraform
+  CONTAINER_NAME: flask-app                 
+
+jobs:
+  terraform:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    outputs:
+      ecr_repository_url: ${{ steps.terraform-outputs.outputs.ecr_repository_url }}
+      ecs_cluster_name: ${{ steps.terraform-outputs.outputs.ecs_cluster_name }}
+      ecs_service_name: ${{ steps.terraform-outputs.outputs.ecs_service_name }}
+      cloudwatch_log_group: ${{ steps.terraform-outputs.outputs.cloudwatch_log_group }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Get Terraform Outputs
+        id: terraform-outputs
+        run: |
+          echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+          echo "ecs_cluster_name=$(terraform output -raw ecs_cluster_name)" >> $GITHUB_OUTPUT
+          echo "ecs_service_name=$(terraform output -raw ecs_service_name)" >> $GITHUB_OUTPUT
+          echo "cloudwatch_log_group=$(terraform output -raw cloudwatch_log_group)" >> $GITHUB_OUTPUT
+        working-directory: ${{ env.TF_DIR }}
+
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        id: build-image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          FULL_ECR_REPO: ${{ needs.terraform.outputs.ecr_repository_url }} # الرابط الكامل من التيراموفورم
+        run: |
+          # 2. تم إصلاح تكرار رابط الـ ECR هنا ليعمل البناء والرفع بشكل سليم
+          docker build -t $FULL_ECR_REPO:$IMAGE_TAG .
+          docker tag $FULL_ECR_REPO:$IMAGE_TAG $FULL_ECR_REPO:latest
+          docker push $FULL_ECR_REPO:$IMAGE_TAG
+          docker push $FULL_ECR_REPO:latest
+          echo "image=$FULL_ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ needs.terraform.outputs.ecs_cluster_name }} \
+            --service ${{ needs.terraform.outputs.ecs_service_name }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ needs.terraform.outputs.ecs_cluster_name }} \
+            --services ${{ needs.terraform.outputs.ecs_service_name }} \
+            --region ${{ env.AWS_REGION }}
+
+  cloudwatch-monitoring:
+    name: CloudWatch Monitoring
+    runs-on: ubuntu-latest
+    needs: [terraform, build-and-deploy]             # جعلناه يعتمد على الـ الـ Jobs السابقة لتمرير المتغيرات
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. تم استبدال قيم الـ env الثابتة القديمة بمتغيرات ديناميكية قادمة من الـ Terraform الـ Job الأول
+      - name: Get service metrics
+        run: |
+          echo "=== CPU Utilization ==="
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/ECS \
+            --metric-name CPUUtilization \
+            --dimensions Name=ClusterName,Value=${{ needs.terraform.outputs.ecs_cluster_name }} Name=ServiceName,Value=${{ needs.terraform.outputs.ecs_service_name }} \
+            --start-time "$(date -d '5 minutes ago' -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --period 300 \
+            --statistics Average \
+            --output table
+
+          echo "=== Memory Utilization ==="
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/ECS \
+            --metric-name MemoryUtilization \
+            --dimensions Name=ClusterName,Value=${{ needs.terraform.outputs.ecs_cluster_name }} Name=ServiceName,Value=${{ needs.terraform.outputs.ecs_service_name }} \
+            --start-time "$(date -d '5 minutes ago' -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --period 300 \
+            --statistics Average \
+            --output table
+
+      - name: Check for errors in logs
+        run: |
+          ERROR_COUNT=$(aws logs filter-log-events \
+            --log-group-name ${{ needs.terraform.outputs.cloudwatch_log_group }} \
+            --filter-pattern "ERROR" \
+            --start-time "$(date -d '5 minutes ago' +%s%3N)" \
+            --end-time "$(date +%s%3N)" \
+            --query 'length(events)' \
+            --output text)
+          
+          echo "Found $ERROR_COUNT errors in the last 5 minutes"
+          
+          if [ $ERROR_COUNT -gt 5 ]; then
+            echo "  High error rate detected in logs!"
+            exit 1
+          fi
+
+      - name: Get CloudWatch Dashboard URL
+        run: |
+          DASHBOARD_URL="https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#dashboards:name=${{ needs.terraform.outputs.ecs_service_name }}-dashboard"
+          echo " CloudWatch Dashboard: $DASHBOARD_URL"
+          echo "DASHBOARD_URL=$DASHBOARD_URL" >> $GITHUB_ENV
+
+      - name: Output deployment summary
+        run: |
+          echo " Deployment successful!"
+          echo " Dashboard: ${{ env.DASHBOARD_URL }}"
+          echo " Logs: https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups/log-group/${{ needs.terraform.outputs.cloudwatch_log_group }}"
+          echo " Service: https://console.aws.amazon.com/ecs/home?region=${{ env.AWS_REGION }}#/clusters/${{ needs.terraform.outputs.ecs_cluster_name }}/services/${{ needs.terraform.outputs.ecs_service_name }}/details"
