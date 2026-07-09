@@ -2,8 +2,58 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Auto-fetch account ID
 data "aws_caller_identity" "current" {}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["1c5877684693c1183e8422303c81e6900cf84d94", "6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+
+resource "aws_iam_role" "github_actions_role" {
+  name = "${var.project_name}-github-actions-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            
+            "token.actions.githubusercontent.com:sub" = "repo:Zainabalidev/*"
+          }
+        }
+      }
+    ]
+  })
+}
+
+
+resource "aws_iam_role_policy_attachment" "github_actions_ecr" {
+  role       = aws_iam_role.github_actions_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_ecs" {
+  role       = aws_iam_role.github_actions_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonECS_FullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_read" {
+  role       = aws_iam_role.github_actions_role.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+
 
 
 resource "aws_ecr_repository" "app" {
@@ -15,7 +65,6 @@ resource "aws_ecr_repository" "app" {
     scan_on_push = true
   }
 }
-
 
 data "aws_vpc" "default" {
   default = true
@@ -66,7 +115,6 @@ resource "aws_security_group" "ecs" {
   }
 }
 
-
 resource "aws_lb" "app" {
   name               = "${var.project_name}-alb-${var.environment}"
   internal           = false
@@ -104,7 +152,6 @@ resource "aws_lb_listener" "app" {
   }
 }
 
-
 resource "aws_ecs_cluster" "app" {
   name = "${var.project_name}-cluster-${var.environment}"
   
@@ -113,7 +160,6 @@ resource "aws_ecs_cluster" "app" {
     value = "enabled"
   }
 }
-
 
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${var.project_name}-task-exec-${var.environment}"
@@ -135,7 +181,6 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.project_name}-${var.environment}"
   retention_in_days = var.log_retention_days
@@ -154,7 +199,7 @@ resource "aws_ecs_task_definition" "app" {
   
   container_definitions = jsonencode([
     {
-      name  = "app"
+      name  = "flask-app" 
       image = "${aws_ecr_repository.app.repository_url}:latest"
       
       portMappings = [
@@ -191,9 +236,7 @@ resource "aws_ecs_task_definition" "app" {
   ])
 }
 
-# ==========================================
-# ECS SERVICE
-# ==========================================
+
 resource "aws_ecs_service" "app" {
   name            = "${var.project_name}-service-${var.environment}"
   cluster         = aws_ecs_cluster.app.id
@@ -209,7 +252,7 @@ resource "aws_ecs_service" "app" {
   
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
-    container_name   = "app"
+    container_name   = "flask-app" 
     container_port   = var.container_port
   }
   
@@ -258,4 +301,3 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   
   alarm_description = "CPU is too high"
 }
-

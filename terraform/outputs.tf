@@ -34,6 +34,6 @@ output "application_url" {
 }
 
 output "ecs_role_arn" {
-  description = "The ARN of the IAM role for GitHub Actions or ECS execution"
-  value       = aws_iam_role.ecs_task_execution.arn
+  description = "The ARN of the IAM role for GitHub Actions via OIDC"
+  value       = aws_iam_role.github_actions_role.arn
 }
