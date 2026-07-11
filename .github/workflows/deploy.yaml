@@ -94,9 +94,8 @@ jobs:
         id: build-image
         env:
           IMAGE_TAG: ${{ github.sha }}
-          FULL_ECR_REPO: ${{ needs.terraform.outputs.ecr_repository_url }} # الرابط الكامل من التيراموفورم
+          FULL_ECR_REPO: ${{ needs.terraform.outputs.ecr_repository_url }}
         run: |
-          # 2. تم إصلاح تكرار رابط الـ ECR هنا ليعمل البناء والرفع بشكل سليم
           docker build -t $FULL_ECR_REPO:$IMAGE_TAG .
           docker tag $FULL_ECR_REPO:$IMAGE_TAG $FULL_ECR_REPO:latest
           docker push $FULL_ECR_REPO:$IMAGE_TAG
@@ -111,11 +110,10 @@ jobs:
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-
   cloudwatch-monitoring:
     name: CloudWatch Monitoring
     runs-on: ubuntu-latest
-    needs: [terraform, build-and-deploy]             # جعلناه يعتمد على الـ الـ Jobs السابقة لتمرير المتغيرات
+    needs: [terraform, build-and-deploy]
     if: github.ref == 'refs/heads/main'
     
     steps:
@@ -125,7 +123,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. تم استبدال قيم الـ env الثابتة القديمة بمتغيرات ديناميكية قادمة من الـ Terraform الـ Job الأول
       - name: Get service metrics
         run: |
           echo "=== CPU Utilization ==="
@@ -163,14 +160,14 @@ jobs:
           echo "Found $ERROR_COUNT errors in the last 5 minutes"
           
           if [ $ERROR_COUNT -gt 5 ]; then
-            echo "  High error rate detected in logs!"
+            echo " High error rate detected in logs!"
             exit 1
           fi
 
       - name: Get CloudWatch Dashboard URL
         run: |
           DASHBOARD_URL="https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#dashboards:name=${{ needs.terraform.outputs.ecs_service_name }}-dashboard"
-          echo " CloudWatch Dashboard: $DASHBOARD_URL"
+          echo "CloudWatch Dashboard: $DASHBOARD_URL"
           echo "DASHBOARD_URL=$DASHBOARD_URL" >> $GITHUB_ENV
 
       - name: Output deployment summary
