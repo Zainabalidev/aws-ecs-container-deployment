@@ -186,9 +186,6 @@ resource "aws_cloudwatch_log_group" "app" {
   retention_in_days = var.log_retention_days
 }
 
-# ==========================================
-# ECS TASK DEFINITION
-# ==========================================
 resource "aws_ecs_task_definition" "app" {
   family                   = "${var.project_name}-task-${var.environment}"
   network_mode             = "awsvpc"
@@ -243,6 +240,8 @@ resource "aws_ecs_service" "app" {
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+
+  wait_for_steady_state = false
   
   network_configuration {
     subnets          = data.aws_subnets.default.ids
