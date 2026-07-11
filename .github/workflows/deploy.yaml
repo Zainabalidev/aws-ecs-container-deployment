@@ -53,11 +53,15 @@ jobs:
       - name: Terraform Plan
         run: terraform plan
         working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve
         working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
       - name: Get Terraform Outputs
         id: terraform-outputs
