@@ -56,6 +56,7 @@ jobs:
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
           TF_VAR_environment: dev
+          TF_VAR_project_name: ${{ env.CONTAINER_NAME }}
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
@@ -64,6 +65,7 @@ jobs:
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
           TF_VAR_environment: dev
+          TF_VAR_project_name: ${{ env.CONTAINER_NAME }}
 
       - name: Get Terraform Outputs
         id: terraform-outputs
