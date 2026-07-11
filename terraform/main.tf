@@ -181,6 +181,11 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+import {
+  to = aws_cloudwatch_log_group.app
+  id = "/ecs/flask-app-dev"
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.project_name}-${var.environment}"
   retention_in_days = var.log_retention_days
