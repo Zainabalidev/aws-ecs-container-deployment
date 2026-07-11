@@ -111,12 +111,6 @@ jobs:
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-      - name: Wait for service stability
-        run: |
-          aws ecs wait services-stable \
-            --cluster ${{ needs.terraform.outputs.ecs_cluster_name }} \
-            --services ${{ needs.terraform.outputs.ecs_service_name }} \
-            --region ${{ env.AWS_REGION }}
 
   cloudwatch-monitoring:
     name: CloudWatch Monitoring
