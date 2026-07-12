@@ -19,8 +19,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:sts::146445314795:assumed-role/flask-app-github-actions-role-dev/GitHubActions
-          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::146445314795:role/flask-app-github-actions-role-dev
+          aws-region: eu-west-1
 
       # ==========================================
       # RUN TERRAFORM AUTOMATION
@@ -29,15 +29,18 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
+        working-directory: ./terraform
         run: terraform init
 
       - name: Terraform Apply
         id: tf-apply
+        working-directory: ./terraform
         run: terraform apply -auto-approve
 
       # Gather values exported dynamically by Terraform
       - name: Extract Terraform Outputs
         id: outputs
+        working-directory: ./terraform
         run: |
           echo "ECR_REPO=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
           echo "ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)" >> $GITHUB_OUTPUT
@@ -69,4 +72,4 @@ jobs:
             --cluster ${{ steps.outputs.outputs.ECS_CLUSTER }} \
             --service ${{ steps.outputs.outputs.ECS_SERVICE }} \
             --force-new-deployment \
-            --region us-east-1
+            --region eu-west-1
