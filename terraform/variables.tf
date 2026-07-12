@@ -1,75 +1,23 @@
 variable "aws_region" {
-  description = "AWS region"
   type        = string
+  description = "The AWS region to deploy resources into"
+  default     = "eu-west-1"
 }
 
 variable "environment" {
-  description = "Environment (dev/staging/prod)"
   type        = string
+  description = "Deployment environment suffix"
+  default     = "dev"
 }
 
 variable "project_name" {
-  description = "Project name"
   type        = string
+  description = "Prefix for resource naming"
+  default     = "flask-app"
 }
 
-
-variable "container_port" {
-  description = "Container port"
-  type        = number
-  default     = 80
-}
-
-variable "task_cpu" {
-  description = "ECS task CPU"
+variable "github_repo" {
   type        = string
-  default     = "256"
-}
-
-variable "task_memory" {
-  description = "ECS task memory"
-  type        = string
-  default     = "512"
-}
-
-variable "desired_count" {
-  description = "Number of tasks"
-  type        = number
-  default     = 2
-}
-
-variable "min_count" {
-  description = "Min tasks for autoscaling"
-  type        = number
-  default     = 1
-}
-
-variable "max_count" {
-  description = "Max tasks for autoscaling"
-  type        = number
-  default     = 4
-}
-
-variable "log_retention_days" {
-  description = "CloudWatch log retention"
-  type        = number
-  default     = 30
-}
-
-variable "log_level" {
-  description = "Log level"
-  type        = string
-  default     = "INFO"
-}
-
-variable "app_version" {
-  description = "Application version"
-  type        = string
-  default     = "1.0.0"
-}
-
-variable "gunicorn_workers" {
-  description = "Number of Gunicorn workers"
-  type        = string
-  default     = "auto"
+  description = "The GitHub repository in format 'owner/repo'"
+  default     = "Zainabalidev/aws-ecs-container-deployment"
 }
