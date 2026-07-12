@@ -1,4 +1,4 @@
-name: Complete Infrastructure & App Deployment
+name: Complete App Deployment
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main 
 
 permissions:
-  id-token: write # Required for AWS OIDC authentication
+  id-token: write
   contents: read
 
 jobs:
@@ -22,33 +22,6 @@ jobs:
           role-to-assume: arn:aws:iam::146445314795:role/flask-app-github-actions-role-dev
           aws-region: eu-west-1
 
-      # ==========================================
-      # RUN TERRAFORM AUTOMATION
-      # ==========================================
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        working-directory: ./terraform
-        run: terraform init
-
-      - name: Terraform Apply
-        id: tf-apply
-        working-directory: ./terraform
-        run: terraform apply -auto-approve
-
-      # Gather values exported dynamically by Terraform
-      - name: Extract Terraform Outputs
-        id: outputs
-        working-directory: ./terraform
-        run: |
-          echo "ECR_REPO=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
-          echo "ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)" >> $GITHUB_OUTPUT
-          echo "ECS_SERVICE=$(terraform output -raw ecs_service_name)" >> $GITHUB_OUTPUT
-
-      # ==========================================
-      # DOCKER BUILD, PUSH & ECS DEPLOY
-      # ==========================================
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -58,18 +31,15 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Pulls the exact repository destination from Terraform outputs
-          REPO_URL=${{ steps.outputs.outputs.ECR_REPO }}
-          
+          REPO_URL="146445314795.dkr.ecr.eu-west-1.amazonaws.com/flask-app-dev"
           docker build -t $REPO_URL:$IMAGE_TAG -t $REPO_URL:latest .
           docker push $REPO_URL:$IMAGE_TAG
           docker push $REPO_URL:latest
 
       - name: Force ECS Deployment Update
         run: |
-          # Triggers Fargate to pull the newly built Docker image from ECR
           aws ecs update-service \
-            --cluster ${{ steps.outputs.outputs.ECS_CLUSTER }} \
-            --service ${{ steps.outputs.outputs.ECS_SERVICE }} \
+            --cluster flask-app-cluster-dev \
+            --service flask-app-service \
             --force-new-deployment \
             --region eu-west-1
