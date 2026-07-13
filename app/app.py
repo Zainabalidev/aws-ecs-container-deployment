@@ -39,7 +39,7 @@ logger.addHandler(json_handler)
 app = Flask(__name__)
 
 # Custom metrics for CloudWatch
-cloudwatch = boto3.client('cloudwatch', region_name=os.getenv("AWS_REGION", "us-east-1"))
+cloudwatch = boto3.client('cloudwatch', region_name=os.getenv("AWS_REGION", "eu-west-1"))
 
 def send_custom_metric(metric_name, value, unit="Count"):
     try:
