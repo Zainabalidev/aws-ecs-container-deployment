@@ -1,104 +1,204 @@
-# Containerized Application Deployment on ECS
+# Containerized Application Deployment on AWS ECS
 
-An automated, secure, and production-grade continuous integration and continuous deployment (CI/CD) infrastructure project that deploys a containerized Python Flask application to AWS ECS Fargate using Terraform and GitHub Actions.
-
----
-
-##  Project Overview & Goals
-
-The core objective of this project is to implement a modern, serverless container lifecycle that completely avoids the overhead of manually managing infrastructure or handling static cloud credentials. 
-
-### Key Design Goals
-* Zero-Server Compute Management: Utilizes AWS Fargate to run containers serverlessly across isolated Public Subnets without maintaining, patching, or scaling underlying EC2 instances.
-* Secured Passwordless CI/CD: Utilizes an IAM OIDC (OpenID Connect) Identity Provider relationship between GitHub Actions and AWS. This entirely removes the risk of compromised secrets by avoiding the storage of long-lived static IAM Access Keys.
-* Optimized Multi-Stage Assembly: Builds a minimal, isolated container execution layer that strips out intermediate dependencies, preserving execution speed and ensuring a secure container runtime.
-* Automated Rolling Updates: Coordinates a hands-off, two-job pipeline sequence (build-and-push and deploy-infrastructure) that signals AWS ECS to execute a zero-downtime rolling update upon every main-branch push.
+An automated, secure, and production-ready CI/CD infrastructure project that deploys a containerized Python Flask application to AWS ECS Fargate using Terraform and GitHub Actions.
 
 ---
 
-##  System Architecture
+# Project Overview & Goals
 
-Traffic routes directly through an Internet Gateway into public subnets distributed across Availability Zones (eu-west-1a and eu-west-1b), hitting container workloads guarded tightly by an application-specific stateful Security Group.
+The core objective of this project is to implement a modern, serverless container lifecycle that completely avoids the overhead of managing virtual servers or handling risky, static cloud credentials.
 
-![System Architecture Diagram](architecture.drawio.png)
+## Key Design Goals
+
+### Zero-Server Compute (AWS Fargate)
+Runs containers serverlessly across isolated subnets, removing the need to provision, patch, or scale underlying EC2 instances.
+
+### Passwordless CI/CD (OIDC)
+Uses an IAM OpenID Connect (OIDC) trust relationship between GitHub Actions and AWS. This eliminates the need for long-lived, static IAM access keys in your repository.
+
+### Optimized Multi-Stage Builds
+Minimizes container image sizes by stripping out build-time dependencies, keeping the production runtime slim, fast, and secure.
+
+### Automated Rolling Updates
+Runs a two-stage GitHub Actions pipeline (`build-and-push` followed by `deploy-infrastructure`) to trigger zero-downtime rolling updates in ECS on every push to the `main` branch.
 
 ---
 
-##  AWS Services Used
+# System Architecture
 
-The architecture layers multiple AWS services together to form a highly resilient, isolated computing partition:
-
-* Amazon VPC: Establishes a dedicated, secure 10.0.0.0/16 network perimeter spanning separate public availability subnets (eu-west-1a and eu-west-1b) for seamless structural fallback.
-* IAM OIDC Identity Provider & Roles: Manages cryptographic web identity assertions to grant short-lived, permission-bounded deployment privileges to active GitHub workflows.
-* Amazon ECR (Elastic Container Registry): Serves as an immutable repository holding application Docker image layers tagged dynamically by active Git commit SHAs.
-* Amazon ECS (Fargate Launch Type): Automatically schedules, spins up, and scales serverless tasks across the VPC, using container native parameters.
-* AWS Security Groups: Acts as a stateful, protective firewall that limits open ingress vectors strictly to the primary application listening port (Port 80) while permitting unhindered outbound routing.
-* Amazon CloudWatch Logs: Captures stdout and stderr diagnostic application records directly from active container tasks into an encapsulated logging group for centralized auditing.
+Traffic routes from the internet through an Internet Gateway directly to container workloads running inside public subnets across multiple Availability Zones (`eu-west-1a` and `eu-west-1b`). Task-level Security Groups act as a stateful firewall to protect the containers.
 
 ---
 
-##  Step-by-Step Deployment Guide
+# AWS Services Used
 
-### Prerequisites
-* AWS CLI configured with deployment permissions.
-* Terraform installed locally.
-* An application repository configured on GitHub.
+The infrastructure combines the following AWS resources to form a secure, highly resilient, and isolated compute environment:
 
-### Step 1: Initialize and Provision Cloud Infrastructure
+- **Amazon VPC**
+  - Dedicated network (`10.0.0.0/16`)
+  - Public subnets across two Availability Zones (`eu-west-1a` and `eu-west-1b`)
+  - High availability architecture
 
-Navigate to the folder containing the main.tf configuration file to initialize providers and provision the baseline AWS workspace:
+- **IAM OIDC Identity Provider & IAM Roles**
+  - Grants short-lived credentials to GitHub Actions
+  - Eliminates static IAM access keys
 
-[COMMANDS TO RUN]:
-# Initialize Terraform and download required AWS providers
+- **Amazon ECR (Elastic Container Registry)**
+  - Private Docker image registry
+  - Stores versioned container images tagged with Git commit SHAs
+
+- **Amazon ECS (Fargate Launch Type)**
+  - Serverless container orchestration
+  - Automatically provisions and scales containerized workloads
+
+- **AWS Security Groups**
+  - Allows inbound traffic only on port **80**
+  - Allows unrestricted outbound traffic
+
+- **Amazon CloudWatch Logs**
+  - Collects application logs (`stdout` and `stderr`)
+  - Enables centralized monitoring and troubleshooting
+
+---
+
+# Step-by-Step Deployment Guide
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+- AWS CLI installed and configured
+- Terraform installed
+- Docker installed
+- A GitHub repository containing the application source code
+
+---
+
+## Step 1: Initialize and Provision Infrastructure
+
+Navigate to the Terraform directory and execute:
+
+```bash
+# Initialize Terraform
 terraform init
 
-# Validate configuration syntax integrity
+# Validate the configuration
 terraform validate
 
-# Review the upcoming cloud infrastructure changes
+# Preview infrastructure changes
 terraform plan
 
-# Apply and construct live AWS cloud infrastructure
+# Provision AWS infrastructure
 terraform apply -auto-approve
-[END OF COMMANDS]
+```
 
-### Step 2: Connect the GitHub Pipeline via OIDC Roles
+---
 
-1. Review the successful terraform apply output metrics to find the generated GitHub Actions IAM Role Amazon Resource Name (ARN).
-2. Navigate to the GitHub repository dashboard and select Settings > Secrets and variables > Actions.
-3. Ensure the pipeline targets the exact configured OIDC execution role ARN securely:
-   * AWS_ROLE_TO_ASSUME: arn:aws:iam::146445314795:role/flask-app-github-actions-role-dev
-   * AWS_REGION: eu-west-1
+## Step 2: Configure GitHub Actions Authentication (OIDC)
 
-### Step 3: Trigger the Automated CI/CD Lifecycle
+Instead of storing AWS credentials in GitHub Secrets, configure GitHub Actions to assume the IAM role created by Terraform.
 
-Commit the multi-stage `Dockerfile`, the infrastructural `main.tf`, and the `.github/workflows/deploy.yaml` pipeline structure to the repository:
+1. Copy the GitHub Actions IAM Role ARN from the Terraform outputs.
+2. Navigate to:
 
-[START_CODE]bash
+```
+GitHub Repository
+→ Settings
+→ Secrets and variables
+→ Actions
+→ Variables
+```
+
+3. Add the following repository variables:
+
+| Variable | Value |
+|----------|-------|
+| `AWS_ROLE_TO_ASSUME` | `arn:aws:iam::146445314795:role/flask-app-github-actions-role-dev` |
+| `AWS_REGION` | `eu-west-1` |
+
+---
+
+## Step 3: Trigger the CI/CD Pipeline
+
+Commit and push the application, Dockerfile, Terraform configuration, and GitHub Actions workflow.
+
+```bash
 git add .
 git commit -m "feat: setup automated infrastructure and container scaling"
 git push origin main
-[END_CODE]
+```
 
-Upon receiving the push event, the GitHub Actions engine triggers a dual-staged job lifecycle:
+Pushing to the `main` branch automatically starts the deployment pipeline.
 
-1. **`build-and-push`**: Authenticates securely via OIDC, constructs a space-optimized multi-stage Docker build, and pushes image layers to Amazon ECR under sequential `:latest` and SHA tags.
-2. **`deploy-infrastructure`**: Signals Amazon ECS to issue a `--force-new-deployment` rolling command, downloading the absolute freshest code configurations to the serverless Fargate layer without incurring application downtime.
+### Stage 1 – Build and Push
 
-### Step 4: Verify the Active Live Endpoint
+- Authenticates to AWS using OIDC
+- Builds the optimized multi-stage Docker image
+- Pushes the image to Amazon ECR
 
-Because this serverless topology deploys application containers straight onto public subnets using automated public IP assignments, utilize this unified AWS CLI command pipeline to extract the live container's public networking endpoint:
+### Stage 2 – Deploy Infrastructure
 
-[START_CODE]bash
-aws ecs list-tasks --cluster flask-app-cluster-dev --query "taskArns[]" --output text | \
-xargs -I {} aws ecs describe-tasks --cluster flask-app-cluster-dev --tasks {} --query "tasks[*].attachments[*].details[?name=='networkInterfaceId'].value" --output text | \
-xargs -I {} aws ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[*].Association.PublicIp" --output text
-[END_CODE]
+- Updates the ECS service
+- Forces a new deployment
+- Performs a rolling update with zero downtime
 
-Copy the returned public IP configuration directly into an internet web browser:
+---
 
-[START_CODE]text
+## Step 4: Verify the Deployment
+
+Retrieve the public IP address of the running ECS task:
+
+```bash
+aws ecs list-tasks \
+  --cluster flask-app-cluster-dev \
+  --query "taskArns[]" \
+  --output text | \
+xargs -I {} aws ecs describe-tasks \
+  --cluster flask-app-cluster-dev \
+  --tasks {} \
+  --query "tasks[*].attachments[*].details[?name=='networkInterfaceId'].value" \
+  --output text | \
+xargs -I {} aws ec2 describe-network-interfaces \
+  --network-interface-ids {} \
+  --query "NetworkInterfaces[*].Association.PublicIp" \
+  --output text
+```
+
+Open the returned public IP address in your browser:
+
+```text
 http://<EXTRACTED_PUBLIC_IP>
-[END_CODE]
+```
 
-The live, serving Flask application will instantly return the environment validation metadata payload string.
+If the deployment is successful, the Flask application will respond with its expected output.
+
+---
+
+# Deployment Workflow Summary
+
+```text
+Developer Push
+       │
+       ▼
+GitHub Actions
+       │
+       ├──────────────► Authenticate with AWS (OIDC)
+       │
+       ▼
+Build Docker Image
+       │
+       ▼
+Push Image to Amazon ECR
+       │
+       ▼
+Terraform Infrastructure
+       │
+       ▼
+Amazon ECS (Fargate)
+       │
+       ▼
+Rolling Deployment
+       │
+       ▼
+Running Flask Application
+```
