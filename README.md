@@ -24,9 +24,32 @@ Runs a two-stage GitHub Actions pipeline (`build-and-push` followed by `deploy-i
 
 ---
 
-# System Architecture
+## System Architecture
 
 Traffic routes from the internet through an Internet Gateway directly to container workloads running inside public subnets across multiple Availability Zones (`eu-west-1a` and `eu-west-1b`). Task-level Security Groups act as a stateful firewall to protect the containers.
+
+![System Architecture Diagram](architecture.drawio.png)
+
+### Architectural Workflow Breakdown
+
+The system's architecture is divided into two primary flows: the **CI/CD Deployment Pipeline** (top-down) and the **Client Traffic Flow** (bottom-up).
+
+#### 1. CI/CD & Deployment Pipeline (Developer to ECS)
+* **Code Push:** A developer commits and pushes code updates from their **Device** to **GitHub**.
+* **Image Registry Delivery:** Triggered by the push, GitHub Actions builds the Docker container image and securely pushes it directly to **Amazon ECR (Elastic Container Registry)** within the target AWS Region.
+* **Task Deployment:** Once the new image is available in ECR, the pipeline signals AWS ECS to update. The **Amazon ECS (Fargate)** task in **Public Subnet A (`eu-west-1a`)** pulls the fresh image layers from ECR to spin up the updated application container.
+
+#### 2. Network Isolation & Compute Layer (Inside the VPC)
+* **VPC Boundaries:** All compute resources run inside a secure, custom **Virtual Private Cloud (VPC)** designed for high availability.
+* **Multi-AZ Distribution:** The architecture spans two separate Availability Zones (AZs) to ensure resilience:
+  * **Public Subnet A (`eu-west-1a`)**
+  * **Public Subnet B (`eu-west-1b`)**
+* **Serverless Execution:** Containers run as serverless tasks on **Amazon ECS (Fargate)**, meaning there are no EC2 instances to manage or patch.
+* **Stateful Firewalls:** Each ECS Fargate task is encapsulated within its own dedicated **Security Group**, limiting open ingress strictly to the required application port while permitting necessary outbound routing.
+
+#### 3. Monitoring & Edge Routing
+* **Logging & Observability:** The containerized application sends its execution, diagnostic, and error logs directly to **Amazon CloudWatch** for centralized log retention and monitoring.
+* **Internet-Facing Access:** An **Internet Gateway** sits at the edge of the VPC, routing incoming external HTTP requests from clients directly to the running Fargate containers in both public subnets.
 
 ---
 
