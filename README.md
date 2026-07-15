@@ -72,30 +72,33 @@ terraform apply -auto-approve
 
 ### Step 3: Trigger the Automated CI/CD Lifecycle
 
-Commit the multi-stage Dockerfile, the infrastructural main.tf, and the .github/workflows/deploy.yaml pipeline structure to the repository:
+Commit the multi-stage `Dockerfile`, the infrastructural `main.tf`, and the `.github/workflows/deploy.yaml` pipeline structure to the repository:
 
-[COMMANDS TO RUN]:
+[START_CODE]bash
 git add .
 git commit -m "feat: setup automated infrastructure and container scaling"
 git push origin main
-[END OF COMMANDS]
+[END_CODE]
 
 Upon receiving the push event, the GitHub Actions engine triggers a dual-staged job lifecycle:
 
-1. build-and-push: Authenticates securely via OIDC, constructs a space-optimized multi-stage Docker build, and pushes image layers to Amazon ECR under sequential :latest and SHA tags.
-2. deploy-infrastructure: Signals Amazon ECS to issue a --force-new-deployment rolling command, downloading the absolute freshest code configurations to the serverless Fargate layer without incurring application downtime.
+1. **`build-and-push`**: Authenticates securely via OIDC, constructs a space-optimized multi-stage Docker build, and pushes image layers to Amazon ECR under sequential `:latest` and SHA tags.
+2. **`deploy-infrastructure`**: Signals Amazon ECS to issue a `--force-new-deployment` rolling command, downloading the absolute freshest code configurations to the serverless Fargate layer without incurring application downtime.
 
 ### Step 4: Verify the Active Live Endpoint
 
 Because this serverless topology deploys application containers straight onto public subnets using automated public IP assignments, utilize this unified AWS CLI command pipeline to extract the live container's public networking endpoint:
 
-[COMMANDS TO RUN]:
-aws ecs list-tasks --cluster flask-app-cluster-dev --query "taskArns[]" --output text | xargs -I {} aws ecs describe-tasks --cluster flask-app-cluster-dev --tasks {} --query "tasks[*].attachments[*].details[?name=='networkInterfaceId'].value" --output text | xargs -I {} aws ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[*].Association.PublicIp" --output text
-[END OF COMMANDS]
+[START_CODE]bash
+aws ecs list-tasks --cluster flask-app-cluster-dev --query "taskArns[]" --output text | \
+xargs -I {} aws ecs describe-tasks --cluster flask-app-cluster-dev --tasks {} --query "tasks[*].attachments[*].details[?name=='networkInterfaceId'].value" --output text | \
+xargs -I {} aws ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[*].Association.PublicIp" --output text
+[END_CODE]
 
 Copy the returned public IP configuration directly into an internet web browser:
 
-URL FORMAT:
+[START_CODE]text
 http://<EXTRACTED_PUBLIC_IP>
+[END_CODE]
 
 The live, serving Flask application will instantly return the environment validation metadata payload string.
